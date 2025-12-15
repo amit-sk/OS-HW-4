@@ -18,5 +18,6 @@ static int device_open(struct inode* inode, struct file* file);
 static ssize_t device_read(struct file* file, char __user* buffer, size_t length, loff_t* offset);
 static ssize_t device_write(struct file* file, const char __user* buffer, size_t length, loff_t* offset);
 static long device_ioctl(struct file* file, unsigned int cmd, unsigned long arg);
+static int device_release(struct inode* inode, struct file* file);
 
 #endif // MESSAGE_SLOT_H

@@ -145,7 +145,7 @@ static int init_channel(struct file* file, message_slot_device_t* device)
 
     new_channel = kmalloc(sizeof(message_slot_channel_t), GFP_KERNEL);
     if (NULL == new_channel) {
-        printk(KERN_ERR "Failed to allocate memory for initial channel\n");
+        printk(KERN_ERR "%s: Failed to allocate memory for initial channel\n", MSG_SLOT_DEVICE_NAME);
         return_code = -ENOMEM;
         goto cleanup;
     }
@@ -182,7 +182,7 @@ static int device_open(struct inode* inode, struct file* file)
     if (current_device == NULL) {
         current_device = kmalloc(sizeof(message_slot_device_t), GFP_KERNEL);
         if (current_device == NULL) {
-            printk(KERN_ERR "Failed to allocate memory for new message slot device\n");
+            printk(KERN_ERR "%s: Failed to allocate memory for new message slot device\n", MSG_SLOT_DEVICE_NAME);
             return_code = -ENOMEM;
             goto cleanup;
         }
@@ -216,12 +216,72 @@ cleanup:
 
 static ssize_t device_read(struct file* file, char __user* buffer, size_t length, loff_t* offset)
 {
-    return 0;
+    int return_code = DRIVER_FAILURE;
+    message_slot_channel_t* current_channel = (message_slot_channel_t*)file->private_data;  // the channel associated with the file
+
+    if (NULL == current_channel) {
+        // this shouldn't happen since the channel associated with a file is initialized on open
+        printk(KERN_ERR "%s: ioctl called on non-initialized file\n", MSG_SLOT_DEVICE_NAME);
+        return_code = -EINVAL;
+        goto cleanup;
+    }
+
+    return_code = DRIVER_SUCCESS;
+cleanup:
+    return return_code;
+}
+
+static void encrypt_message(char* message, size_t length)
+{
+    size_t i = 0;
+
+    // The censorship algorithm replaces every 4th character (e.g., positions 3, 7, 11, etc., using 0-based indexing) with ’#’. 
+    for (i = 3; i < length; i+=4) {
+        message[i] = '#';
+    }
 }
 
 static ssize_t device_write(struct file* file, const char __user* buffer, size_t length, loff_t* offset)
 {
-    return 0;
+    int return_code = DRIVER_FAILURE;
+    int i = 0;
+    message_slot_channel_t* current_channel = (message_slot_channel_t*)file->private_data;  // the channel associated with the file
+
+    if (NULL == current_channel) {
+        // this shouldn't happen since the channel associated with a file is initialized on open
+        printk(KERN_ERR "%s: ioctl called on non-initialized file\n", MSG_SLOT_DEVICE_NAME);
+        return_code = -EINVAL;
+        goto cleanup;
+    }
+
+    if (0 == current_channel->channel_id) {
+        printk(KERN_ERR "%s: write called before channel id was set\n", MSG_SLOT_DEVICE_NAME);
+        return_code = -EINVAL;
+        goto cleanup;
+    }
+
+    if (MAX_MESSAGE_LENGTH < length || 0 == length) {
+        printk(KERN_ERR "%s: write called with message invalid length: %zu, max allowed: %d\n", MSG_SLOT_DEVICE_NAME, length, MAX_MESSAGE_LENGTH);
+        return_code = -EMSGSIZE;
+        goto cleanup;
+    }
+
+    current_channel->message_length = length;
+    for (i = 0; i < length; i++) {
+        get_user(current_channel->message[i], &buffer[i]);
+    }
+
+    if (current_channel->should_encrypt) {
+        encrypt_message(current_channel->message, length);
+    }
+
+    // TODO: debug
+    printk(KERN_INFO "%s: Writing message of length %zu to channel id %u\n", MSG_SLOT_DEVICE_NAME, length, current_channel->channel_id);
+    printk(KERN_INFO "%s: Message content: %.*s\n", MSG_SLOT_DEVICE_NAME, (int)length, current_channel->message);
+
+    return_code = DRIVER_SUCCESS;
+cleanup:
+    return return_code;
 }
 
 static long device_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
@@ -231,7 +291,7 @@ static long device_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 
     if (NULL == current_channel) {
         // this shouldn't happen since the channel associated with a file is initialized on open
-        printk(KERN_ERR "ioctl called on non-initialized file\n");
+        printk(KERN_ERR "%s: ioctl called on non-initialized file\n", MSG_SLOT_DEVICE_NAME);
         return_code = -EINVAL;
         goto cleanup;
     }
@@ -244,7 +304,7 @@ static long device_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
     case MSG_SLOT_CHANNEL:
         // channel id expected to be a non-zero unsigned int
         if (arg == 0) {
-            printk(KERN_ERR "ioctl called with invalid channel id 0\n");
+            printk(KERN_ERR "%s: ioctl called with invalid channel id 0\n", MSG_SLOT_DEVICE_NAME);
             return_code = -EINVAL;
             goto cleanup;
         }
@@ -254,7 +314,7 @@ static long device_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
     case MSG_SLOT_SET_CEN:
         // censorship mode expected to be 0 or 1
         if (arg > 1) {
-            printk(KERN_ERR "ioctl called with invalid censorship mode %lu\n", arg);
+            printk(KERN_ERR "%s: ioctl called with invalid censorship mode %lu\n", MSG_SLOT_DEVICE_NAME, arg);
             return_code = -EINVAL;
             goto cleanup;
         }
@@ -262,7 +322,7 @@ static long device_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
         break;
     
     default:
-        printk(KERN_ERR "ioctl called with invalid command %lu\n", arg);
+        printk(KERN_ERR "%s: ioctl called with invalid command %lu\n", MSG_SLOT_DEVICE_NAME, arg);
         return_code = -EINVAL;
         goto cleanup;
         break;

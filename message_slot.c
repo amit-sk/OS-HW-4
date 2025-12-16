@@ -217,16 +217,42 @@ cleanup:
 static ssize_t device_read(struct file* file, char __user* buffer, size_t length, loff_t* offset)
 {
     int return_code = DRIVER_FAILURE;
+    size_t i = 0;
     message_slot_channel_t* current_channel = (message_slot_channel_t*)file->private_data;  // the channel associated with the file
 
     if (NULL == current_channel) {
         // this shouldn't happen since the channel associated with a file is initialized on open
-        printk(KERN_ERR "%s: ioctl called on non-initialized file\n", MSG_SLOT_DEVICE_NAME);
+        printk(KERN_ERR "%s: read called on non-initialized file\n", MSG_SLOT_DEVICE_NAME);
         return_code = -EINVAL;
         goto cleanup;
     }
 
-    return_code = DRIVER_SUCCESS;
+    if (0 == current_channel->channel_id) {
+        printk(KERN_ERR "%s: read called before channel id was set\n", MSG_SLOT_DEVICE_NAME);
+        return_code = -EINVAL;
+        goto cleanup;
+    }
+
+    if (0 == current_channel->message_length) {
+        printk(KERN_ERR "%s: read called but no message exists\n", MSG_SLOT_DEVICE_NAME);
+        return_code = -EWOULDBLOCK;
+        goto cleanup;
+    }
+
+    if (length < current_channel->message_length) {
+        printk(KERN_ERR "%s: read called with a buffer too small. current message length %zu\n", MSG_SLOT_DEVICE_NAME, current_channel->message_length);
+        return_code = -ENOSPC;
+        goto cleanup;
+    }
+
+    for (i = 0; i < current_channel->message_length; i++) {
+        put_user(current_channel->message[i], &buffer[i]);
+    }
+    // TODO: debug
+    printk(KERN_INFO "%s: Reading message of length %zu from channel id %u\n", MSG_SLOT_DEVICE_NAME, current_channel->message_length, current_channel->channel_id);
+    printk(KERN_INFO "%s: Message content: %.*s\n", MSG_SLOT_DEVICE_NAME, (int)current_channel->message_length, current_channel->message);
+    return_code = current_channel->message_length;
+
 cleanup:
     return return_code;
 }
@@ -249,7 +275,7 @@ static ssize_t device_write(struct file* file, const char __user* buffer, size_t
 
     if (NULL == current_channel) {
         // this shouldn't happen since the channel associated with a file is initialized on open
-        printk(KERN_ERR "%s: ioctl called on non-initialized file\n", MSG_SLOT_DEVICE_NAME);
+        printk(KERN_ERR "%s: write called on non-initialized file\n", MSG_SLOT_DEVICE_NAME);
         return_code = -EINVAL;
         goto cleanup;
     }
@@ -278,8 +304,7 @@ static ssize_t device_write(struct file* file, const char __user* buffer, size_t
     // TODO: debug
     printk(KERN_INFO "%s: Writing message of length %zu to channel id %u\n", MSG_SLOT_DEVICE_NAME, length, current_channel->channel_id);
     printk(KERN_INFO "%s: Message content: %.*s\n", MSG_SLOT_DEVICE_NAME, (int)length, current_channel->message);
-
-    return_code = DRIVER_SUCCESS;
+    return_code = length;
 cleanup:
     return return_code;
 }

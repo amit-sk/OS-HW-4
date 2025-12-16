@@ -4,12 +4,17 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "message_slot.h"
 
+#define SENDER_SUCCESS (0)
+#define SENDER_FAILURE (1)
+
 int main(int argc, char* argv[])
 {
-    int return_code = GENERAL_FAILURE;
+    int return_code = SENDER_FAILURE;
+    int return_value = GENERAL_FAILURE;  // for device function return values
     char* filepath = NULL;
     unsigned long channel_id = 0;
     unsigned char censorship_mode = 0;
@@ -38,17 +43,39 @@ int main(int argc, char* argv[])
     filepath = argv[1];
     message = argv[4];
 
+    // Open the specified message slot device file.
     fd = open(filepath, O_RDWR);
     if (-1 == fd) {
         perror("open failed");
         goto cleanup;
     }
 
-    return_code = GENERAL_SUCCESS;
+    // Set the censorship mode to the value specified on the command line 
+    return_value = device_ioctl(fd, MSG_SLOT_SET_CEN, censorship_mode);
+    if (GENERAL_SUCCESS != return_value) {
+        perror("ioctl failed");
+        goto cleanup;
+    }
+
+    // Set the channel id to the id specified on the command line.
+    return_value = device_ioctl(fd, MSG_SLOT_CHANNEL, channel_id);
+    if (GENERAL_SUCCESS != return_value) {
+        perror("ioctl failed");
+        goto cleanup;
+    }
+
+    // Write the specified message to the message slot file.
+    return_value = device_write(fd, message, strlen(message), NULL);
+    if (GENERAL_SUCCESS != return_value) {
+        perror("write failed");
+        goto cleanup;
+    }
+
+    return_code = SENDER_SUCCESS;
 cleanup:
     if (-1 != fd) {
         close(fd);
     }
 
-    return 0;
+    return return_code;
 }

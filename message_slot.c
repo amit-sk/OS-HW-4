@@ -40,8 +40,14 @@ typedef struct message_slot_device {
 
 static message_slot_device_t* device_list_head = NULL;  // global pointer to all slots
 
-
 // ===== Device setup =====
+
+static int device_open(struct inode* inode, struct file* file);
+static ssize_t device_read(struct file* file, char __user* buffer, size_t length, loff_t* offset);
+static ssize_t device_write(struct file* file, const char __user* buffer, size_t length, loff_t* offset);
+static long device_ioctl(struct file* file, unsigned int cmd, unsigned long arg);
+static int device_release(struct inode* inode, struct file* file);
+
 struct file_operations fops = {
     .owner = THIS_MODULE,
     .open = device_open,
@@ -59,7 +65,7 @@ static int __init message_slot_init(void)
         return major;
     }
     printk(KERN_INFO "%s device registered with major number %d\n", MSG_SLOT_DEVICE_NAME, major);
-    return GENERAL_SUCCESS;
+    return DRIVER_SUCCESS;
 }
 
 static void __exit message_slot_exit(void)
@@ -110,7 +116,7 @@ static int device_release(struct inode* inode, struct file* file)
     }
     kfree(current_device);
     printk(KERN_INFO "%s: Device with minor number %d closed\n", MSG_SLOT_DEVICE_NAME, minor_number);
-    return GENERAL_SUCCESS;
+    return DRIVER_SUCCESS;
 }
 
 static int device_open(struct inode* inode, struct file* file)
@@ -120,7 +126,7 @@ static int device_open(struct inode* inode, struct file* file)
     structure for the file being opened, and create one if not. You can get the opened file’s minor
     number using the iminor() kernel function (applied to the struct inode* argument of
     device_open()).*/
-    int return_code = GENERAL_FAILURE;
+    int return_code = DRIVER_FAILURE;
     int minor_number = iminor(inode);
     message_slot_device_t* current_device = find_device_by_minor(minor_number);
 
@@ -149,7 +155,7 @@ static int device_open(struct inode* inode, struct file* file)
     }
 
     printk(KERN_INFO "%s: Device with minor number %d opened\n", MSG_SLOT_DEVICE_NAME, minor_number);
-    return_code = GENERAL_SUCCESS;
+    return_code = DRIVER_SUCCESS;
 
 cleanup:
     return return_code;

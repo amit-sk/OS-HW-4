@@ -1,5 +1,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -14,7 +15,7 @@
 int main(int argc, char* argv[])
 {
     int return_code = SENDER_FAILURE;
-    int return_value = GENERAL_FAILURE;  // for device function return values
+    int return_value = DRIVER_FAILURE;  // for device function return values
     char* filepath = NULL;
     unsigned long channel_id = 0;
     unsigned char censorship_mode = 0;
@@ -51,22 +52,22 @@ int main(int argc, char* argv[])
     }
 
     // Set the censorship mode to the value specified on the command line 
-    return_value = device_ioctl(fd, MSG_SLOT_SET_CEN, censorship_mode);
-    if (GENERAL_SUCCESS != return_value) {
+    return_value = ioctl(fd, MSG_SLOT_SET_CEN, censorship_mode);
+    if (DRIVER_FAILURE == return_value) {
         perror("ioctl failed");
         goto cleanup;
     }
 
     // Set the channel id to the id specified on the command line.
-    return_value = device_ioctl(fd, MSG_SLOT_CHANNEL, channel_id);
-    if (GENERAL_SUCCESS != return_value) {
+    return_value = ioctl(fd, MSG_SLOT_CHANNEL, channel_id);
+    if (DRIVER_FAILURE == return_value) {
         perror("ioctl failed");
         goto cleanup;
     }
 
     // Write the specified message to the message slot file.
-    return_value = device_write(fd, message, strlen(message), NULL);
-    if (GENERAL_SUCCESS != return_value) {
+    return_value = write(fd, message, strlen(message));
+    if (DRIVER_FAILURE == return_value) {
         perror("write failed");
         goto cleanup;
     }

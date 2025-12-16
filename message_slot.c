@@ -59,18 +59,20 @@ struct file_operations fops = {
 
 static int __init message_slot_init(void)
 {
+    // requesting specific major
     int major = register_chrdev(MSG_SLOT_DEVICE_MAJOR, MSG_SLOT_DEVICE_NAME, &fops);
-    if (major < 0) {
-        printk(KERN_ERR "Registering %s char device failed with %d\n", MSG_SLOT_DEVICE_NAME, major);
+    if (major != 0) {
+        printk(KERN_ERR "Registering %s char device as major %d failed with %d\n", MSG_SLOT_DEVICE_NAME, MSG_SLOT_DEVICE_MAJOR, major);
         return major;
     }
-    printk(KERN_INFO "%s device registered with major number %d\n", MSG_SLOT_DEVICE_NAME, major);
+    printk(KERN_INFO "%s: Device with major number %d - registered\n", MSG_SLOT_DEVICE_NAME, MSG_SLOT_DEVICE_MAJOR);
     return DRIVER_SUCCESS;
 }
 
 static void __exit message_slot_exit(void)
 {
-    unregister_chrdev(MSG_SLOT_DEVICE_MAJOR, MSG_SLOT_DEVICE_NAME);
+    unregister_chrdev(MSG_SLOT_DEVICE_MAJOR, MSG_SLOT_DEVICE_NAME);  // best effort, not checking return value
+    printk(KERN_INFO "%s: Device with major number %d - unregistered\n", MSG_SLOT_DEVICE_NAME, MSG_SLOT_DEVICE_MAJOR);
 }
 
 module_init(message_slot_init);

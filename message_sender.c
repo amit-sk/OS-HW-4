@@ -17,7 +17,7 @@ int main(int argc, char* argv[])
     int return_code = SENDER_FAILURE;
     int return_value = DRIVER_FAILURE;  // for device function return values
     char* filepath = NULL;
-    unsigned long channel_id = 0;
+    unsigned int channel_id = 0;
     unsigned char censorship_mode = 0;
     char* message = NULL;
     char* endptr = NULL;  // for str to int conversion
@@ -28,7 +28,7 @@ int main(int argc, char* argv[])
         goto cleanup;
     }
 
-    channel_id = strtoul(argv[2], &endptr, 10);
+    channel_id = (unsigned int)strtoul(argv[2], &endptr, 10);
     if (*endptr != '\0') {
         fprintf(stderr, "Invalid channel id: %s\n", argv[2]);
         goto cleanup;

@@ -69,10 +69,33 @@ static int __init message_slot_init(void)
     return DRIVER_SUCCESS;
 }
 
+static void free_all(void)
+{
+    message_slot_device_t* device_ptr = device_list_head;
+    while (device_ptr != NULL) {
+        message_slot_device_t* next_device = device_ptr->next;
+
+        // free all channels
+        message_slot_channel_t* channel_ptr = device_ptr->channels;
+        while (channel_ptr != NULL) {
+            message_slot_channel_t* temp_channel = channel_ptr;
+            channel_ptr = channel_ptr->next;
+            kfree(temp_channel);
+        }
+
+        kfree(device_ptr);
+        device_ptr = next_device;
+    }
+}
+
 static void __exit message_slot_exit(void)
 {
     unregister_chrdev(MSG_SLOT_DEVICE_MAJOR, MSG_SLOT_DEVICE_NAME);  // best effort, not checking return value
     printk(KERN_INFO "%s: Device with major number %d - unregistered\n", MSG_SLOT_DEVICE_NAME, MSG_SLOT_DEVICE_MAJOR);
+
+    // all memory is kept until the module is unloaded.
+    printk(KERN_INFO "%s: Freeing all memory\n", MSG_SLOT_DEVICE_NAME);
+    free_all();
 }
 
 module_init(message_slot_init);
@@ -92,42 +115,19 @@ static message_slot_device_t* find_device_by_minor(int minor_number)
     return NULL;
 }
 
+/*
+ * all memory is kept until the module is unloaded.
+ * closing a file (release) will not free the device structure, so subsequent opens will find it.
+*/
 static int device_release(struct inode* inode, struct file* file)
 {
     int minor_number = iminor(inode);
-    message_slot_channel_t* channel_ptr;
-    message_slot_device_t* current_device = find_device_by_minor(minor_number);
-    if (current_device == NULL) {
-        return -EINVAL;  // TODO: should suppress?
-    }
-
-    // free all channels
-    channel_ptr = current_device->channels;
-    while (channel_ptr != NULL) {
-        message_slot_channel_t* temp = channel_ptr;
-        channel_ptr = channel_ptr->next;
-        kfree(temp);
-    }
-
-    // remove device from global list
-    if (current_device->prev != NULL) {
-        current_device->prev->next = current_device->next;
-    }
-    if (current_device->next != NULL) {
-        current_device->next->prev = current_device->prev;
-    }
-    kfree(current_device);
     printk(KERN_INFO "%s: Device with minor number %d closed\n", MSG_SLOT_DEVICE_NAME, minor_number);
     return DRIVER_SUCCESS;
 }
 
 static int device_open(struct inode* inode, struct file* file)
 {
-    /* TODO: You’ll need a data structure to describe individual message slots (device files with different
-    minor numbers). In device_open(), the module can check if it has already created a data
-    structure for the file being opened, and create one if not. You can get the opened file’s minor
-    number using the iminor() kernel function (applied to the struct inode* argument of
-    device_open()).*/
     int return_code = DRIVER_FAILURE;
     int minor_number = iminor(inode);
     message_slot_device_t* current_device = find_device_by_minor(minor_number);

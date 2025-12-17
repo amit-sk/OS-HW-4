@@ -51,7 +51,7 @@ int main(int argc, char* argv[])
     }
 
     // Read a message from the message slot file to a buffer.
-    message_length = read(fd, message, strlen(message));
+    message_length = read(fd, message, sizeof(message));
     if (DRIVER_FAILURE == message_length) {
         perror("read failed");
         goto cleanup;

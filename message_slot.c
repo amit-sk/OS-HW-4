@@ -34,7 +34,6 @@ typedef struct message_slot_device {
     unsigned char minor_number;
     struct message_slot_channel* channels;
     size_t channel_count;
-    struct message_slot_device* prev;
     struct message_slot_device* next;
 } message_slot_device_t;
 
@@ -115,6 +114,18 @@ static message_slot_device_t* find_device_by_minor(int minor_number)
     return NULL;
 }
 
+static message_slot_channel_t* find_channel_by_id(message_slot_device_t* device, unsigned int channel_id)
+{
+    message_slot_channel_t* channel_ptr = device->channels;
+    while (NULL != channel_ptr) {
+        if (channel_ptr->channel_id == channel_id) {
+            return channel_ptr;
+        }
+        channel_ptr = channel_ptr->next;
+    }
+    return NULL;
+}
+
 /*
  * all memory is kept until the module is unloaded.
  * closing a file (release) will not free the device structure, so subsequent opens will find it.
@@ -127,45 +138,35 @@ static int device_release(struct inode* inode, struct file* file)
 }
 
 /*
- * initializes a new channel for the given file associated with the given device.
- * sets the file's private_data to point to the new channel, and adds the channel to the device's channel list.
+ * initializes a new channel for the given device. adds the channel to the device's channel list.
+ * assumes channel id not already in device!
 */
-static int init_channel(struct file* file, message_slot_device_t* device)
+static int init_channel(message_slot_device_t* device, unsigned int channel_id)
 {
     int return_code = DRIVER_FAILURE;
     message_slot_channel_t* new_channel = NULL;
     message_slot_channel_t* channel_ptr = NULL;
 
-    if (NULL == device || NULL == file) {
+    if (NULL == device) {
         goto cleanup;
     }
 
     // TODO: debug
-    printk(KERN_INFO "Initializing new channel for device with minor number %d\n", device->minor_number);
+    printk(KERN_INFO "Initializing new channel %u for device with minor number %d\n", channel_id, device->minor_number);
 
     new_channel = kmalloc(sizeof(message_slot_channel_t), GFP_KERNEL);
     if (NULL == new_channel) {
-        printk(KERN_ERR "%s: Failed to allocate memory for initial channel\n", MSG_SLOT_DEVICE_NAME);
+        printk(KERN_ERR "%s: Failed to allocate memory for new channel\n", MSG_SLOT_DEVICE_NAME);
         return_code = -ENOMEM;
         goto cleanup;
     }
     memset(new_channel, 0, sizeof(message_slot_channel_t));
-
-    file->private_data = (void*)new_channel;  // set in file
+    new_channel->channel_id = channel_id;
 
     // set in device channel list
-    if (NULL == device->channels) {
-        // was empty
-        device->channels = new_channel;
-        device->channel_count = 1;
-    } else {
-        channel_ptr = device->channels;
-        while (channel_ptr->next != NULL) {
-            channel_ptr = channel_ptr->next;
-        }
-        channel_ptr->next = new_channel;
-        device->channel_count++;
-    }
+    new_channel->next = device->channels;
+    device->channels = new_channel;
+    device->channel_count++;
 
     return_code = DRIVER_SUCCESS;
 cleanup:
@@ -198,15 +199,17 @@ static int device_open(struct inode* inode, struct file* file)
                 temp = temp->next;
             }
             temp->next = current_device;
-            current_device->prev = temp;
         }
     }
 
-    // allocate channels for file and set in private_data
-    return_code = init_channel(file, current_device);
-    if (DRIVER_SUCCESS != return_code) {
-        goto cleanup;
-    }
+    // make sure private data is initialized
+    file->private_data = NULL;
+
+    // // allocate channels for file and set in private_data
+    // return_code = init_channel(file, current_device);
+    // if (DRIVER_SUCCESS != return_code) {
+    //     goto cleanup;
+    // }
 
     printk(KERN_INFO "%s: Device with minor number %d opened\n", MSG_SLOT_DEVICE_NAME, minor_number);
     return_code = DRIVER_SUCCESS;
@@ -312,10 +315,14 @@ cleanup:
 static long device_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
 {
     int return_code = DRIVER_FAILURE;
+    int return_value = DRIVER_FAILURE;  // for return values of other functions
+    int minor_number = iminor(file->f_inode);
+    message_slot_channel_t* channel_ptr = NULL;
     message_slot_channel_t* current_channel = (message_slot_channel_t*)file->private_data;  // the channel associated with the file
+    message_slot_device_t* current_device = find_device_by_minor(minor_number);
 
-    if (NULL == current_channel) {
-        // this shouldn't happen since the channel associated with a file is initialized on open
+    if (NULL == current_device) {
+        // this shouldn't happen since the device associated with a file is initialized on open
         printk(KERN_ERR "%s: ioctl called on non-initialized file\n", MSG_SLOT_DEVICE_NAME);
         return_code = -EINVAL;
         goto cleanup;
@@ -328,12 +335,28 @@ static long device_ioctl(struct file* file, unsigned int cmd, unsigned long arg)
     {
     case MSG_SLOT_CHANNEL:
         // channel id expected to be a non-zero unsigned int
-        if (arg == 0) {
+        unsigned int channel_id = (unsigned int)arg;
+        if (channel_id == 0) {
             printk(KERN_ERR "%s: ioctl called with invalid channel id 0\n", MSG_SLOT_DEVICE_NAME);
             return_code = -EINVAL;
             goto cleanup;
         }
-        current_channel->channel_id = (unsigned int)arg;
+
+        if (NULL != current_channel && current_channel->channel_id == channel_id) {
+            // same channel id - do nothing
+            break;
+        }
+        channel_ptr = find_channel_by_id(current_device, channel_id);
+        if (NULL == channel_ptr) {
+            // channel not found - create new one and set in file private data
+            return_value = init_channel(current_device, channel_id);
+            if (DRIVER_SUCCESS != return_value) {
+                return_code = return_value;
+                goto cleanup;
+            }
+            channel_ptr = find_channel_by_id(current_device, channel_id);
+        }
+        file->private_data = (void*)channel_ptr;
         break;
 
     case MSG_SLOT_SET_CEN:

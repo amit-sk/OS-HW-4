@@ -57,3 +57,4 @@ dkms.conf
 # binaries
 message_reader
 message_sender
+tester

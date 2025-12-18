@@ -37,6 +37,7 @@ void test23();
 void test24();
 void test25();
 void test26();
+void test27();
 void print_failure(int test_num);
 void print_success(int test_num);
 void encrypt_message(char* message, size_t length);
@@ -69,7 +70,8 @@ int main(void)
 	test23();
 	test24();
 	test25();
-	test26();
+    test26();
+	test27();
 
 	printf("DONE!\n");
 
@@ -911,6 +913,65 @@ void test26()
 	close(device0_fd);
 
 	print_success(26);
+}
+
+/*
+ * write to channel 1, change to write on channel 2, and return to write on channel 1. read and verify validity.
+*/
+void test27()
+{
+	int device0_fd;
+	char msg_channel1[] = "Message on channel 1";
+	char msg_channel2[] = "Message on channel 2";
+	char msg_channel1_again[] = "channel 1 again";
+	char read_msg[128];
+
+	device0_fd = open(DEV0, O_RDWR);
+	if (device0_fd < 0)
+	{ print_failure(27); exit(0); }
+
+	// Write to channel 1
+	if (ioctl(device0_fd, MSG_SLOT_CHANNEL, 1) < 0)
+	{ print_failure(27); exit(0); }
+
+	if (write(device0_fd, msg_channel1, strlen(msg_channel1)) < strlen(msg_channel1))
+	{ print_failure(27); exit(0); }
+
+	if (read(device0_fd, read_msg, sizeof(read_msg)) < 0)
+	{ print_failure(27); exit(0); }
+
+	if (memcmp(read_msg, msg_channel1, strlen(msg_channel1)) != 0)
+	{ print_failure(27); exit(0); }
+
+	// Switch to channel 2 and write
+	if (ioctl(device0_fd, MSG_SLOT_CHANNEL, 2) < 0)
+	{ print_failure(27); exit(0); }
+
+	if (write(device0_fd, msg_channel2, strlen(msg_channel2)) < strlen(msg_channel2))
+	{ print_failure(27); exit(0); }
+
+	if (read(device0_fd, read_msg, sizeof(read_msg)) < 0)
+	{ print_failure(27); exit(0); }
+
+	if (memcmp(read_msg, msg_channel2, strlen(msg_channel2)) != 0)
+	{ print_failure(27); exit(0); }
+
+	// Switch back to channel 1 and write again
+	if (ioctl(device0_fd, MSG_SLOT_CHANNEL, 1) < 0)
+	{ print_failure(27); exit(0); }
+
+	if (write(device0_fd, msg_channel1_again, strlen(msg_channel1_again)) < strlen(msg_channel1_again))
+	{ print_failure(27); exit(0); }
+
+	if (read(device0_fd, read_msg, sizeof(read_msg)) < 0)
+	{ print_failure(27); exit(0); }
+
+	if (memcmp(read_msg, msg_channel1_again, strlen(msg_channel1_again)) != 0)
+	{ print_failure(27); exit(0); }
+
+	close(device0_fd);
+
+	print_success(27);
 }
 
 void print_success(int test_num)
